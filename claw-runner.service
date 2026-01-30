@@ -1,0 +1,12 @@
+[Unit]
+Description=claw-runner (KRunner integration for Clawdbot)
+After=graphical-session.target
+
+[Service]
+Type=simple
+ExecStart=%h/giles/claw-runner/bin/claw-runner
+Restart=on-failure
+RestartSec=2
+
+[Install]
+WantedBy=default.target
