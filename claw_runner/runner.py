@@ -4,6 +4,7 @@ import subprocess
 from dataclasses import dataclass
 from typing import List
 
+from dbus_next import Variant
 from dbus_next.aio import MessageBus
 from dbus_next.service import ServiceInterface, method
 
@@ -52,11 +53,12 @@ class KRunnerInterface(ServiceInterface):
         # ExactMatch=100, PossibleMatch=30, etc.
         EXACT_MATCH = 100
 
+        # Properties is a{sv} (variant map). dbus-next requires values wrapped in Variant.
         props = {
-            "subtext": url,
-            "urls": [url],
+            "subtext": Variant("s", url),
+            "urls": Variant("as", [url]),
             # Show our single action.
-            "actions": ["open"],
+            "actions": Variant("as", ["open"]),
         }
 
         return [
