@@ -1,12 +1,12 @@
 # claw-runner
 
-A tiny **KRunner** integration for **Clawdbot**.
+A tiny **KRunner** integration for **OpenClaw**.
 
 Type `claw` in KRunner to get quick actions (V1: open the dashboard).
 
 ## Status
 
-- ✅ V1: `claw` → “Open Clawdbot dashboard”
+- ✅ V1: `claw` → “Open the OpenClaw dashboard”
 - 🛠️ Next: status/restart/logs actions + config
 
 ## How it works
