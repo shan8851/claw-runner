@@ -1,47 +1,29 @@
 # claw-runner
 
-A tiny **KRunner** integration for **OpenClaw**.
+A tiny **KRunner** integration for **OpenClaw / Clawdbot**.
 
-Type `claw` in KRunner to get quick actions (V1: open the dashboard).
+Type `claw` in KRunner to get quick actions (open dashboard, status, logs, gateway control).
+
+## Supported environments
+
+- KDE Plasma / KRunner (DBus runner: `org.kde.krunner1`)
+- systemd **user** services (`systemctl --user ...`)
+- Linux terminals (auto-detects common terminals; configurable)
 
 ## Status & actions
 
-Type `claw` in KRunner to get:
+Type `claw` in KRunner:
 
-- Open dashboard
+- Open OpenClaw dashboard
 - Status (concise notification)
 - Status (verbose in terminal)
-- Gateway/Daemon: start/stop/restart (via `systemctl --user`)
-- Logs: follow `journalctl -f` for gateway/daemon/runner
+- Gateway: start/stop/restart (via `systemctl --user`)
+- Logs: follow `journalctl --user -f` for gateway + claw-runner
 - Open config
-- Memory status (currently opens verbose status)
 
-## How it works
+## Install
 
-This is a **DBus-based KRunner runner** implementing `org.kde.krunner1`.
-
-Instead of a big desktop app, it runs as a small user service and returns matches
-to KRunner.
-
-## Install (dev)
-
-### 1) Install deps
-
-```bash
-python3 -m venv .venv
-source .venv/bin/activate
-pip install -r requirements.txt
-```
-
-### 2) Run it
-
-```bash
-./bin/claw-runner
-```
-
-Then open KRunner and type: `claw`
-
-## Install (user service)
+### Option A: Install as a user service (recommended)
 
 ```bash
 ./install.sh
@@ -49,38 +31,85 @@ systemctl --user daemon-reload
 systemctl --user enable --now claw-runner.service
 ```
 
-Restart KRunner if needed:
+If KRunner doesn’t pick it up immediately, restart KRunner:
 
 ```bash
 kquitapp6 krunner || kquitapp5 krunner || true
 krunner &
 ```
 
+### Option B: Run manually (dev)
+
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+./bin/claw-runner
+```
+
 ## Uninstall
 
 ```bash
 ./uninstall.sh
+systemctl --user daemon-reload
 ```
 
 ## Config
 
-Default dashboard URL: `http://127.0.0.1:18789/`
-
-You can override it in:
+Config file:
 
 `~/.config/claw-runner/config.json`
+
+Example:
 
 ```json
 {
   "dashboardUrl": "http://127.0.0.1:18789/",
   "cli": "clawdbot",
   "gatewayService": "clawdbot-gateway.service",
-  "daemonService": "clawdbot-browser.service",
-  "terminal": "x-terminal-emulator -e"
+  "terminal": "kitty"
 }
 ```
 
-Notes:
-- `cli` can be a bare name (resolved via PATH) or an absolute path.
-- If `terminal` is empty, claw-runner auto-detects (x-terminal-emulator/konsole/gnome-terminal/alacritty/kitty/xterm).
+### Terminal selection
 
+Precedence:
+
+1. `terminal` in config
+2. `$TERMINAL`
+3. auto-detect (`kitty`, `konsole`, `gnome-terminal`, `alacritty`, `x-terminal-emulator`, `xterm`)
+
+The terminal is opened **and kept open** after commands finish.
+
+Advanced: you can include `{cmd}` in `terminal` to fully control invocation, e.g.
+
+```json
+{ "terminal": "konsole --hold -e sh -lc {cmd}" }
+```
+
+## OpenClaw links
+
+- OpenClaw repo: https://github.com/openclaw/openclaw (project home)
+- Docs: https://docs.openclaw.ai/ (if you’re using the hosted docs)
+
+## Contributing
+
+PRs welcome.
+
+- Keep changes small and focused
+- Prefer defensive parsing (CLI output formats can evolve)
+- Test on KDE/Plasma + KRunner
+
+Local dev loop:
+
+```bash
+./bin/claw-runner
+# then use KRunner: type "claw"
+```
+
+## Roadmap / ideas
+
+- Better structured channel status once the CLI JSON schema stabilizes
+- Add more actions (open gateway dashboard, open sessions list)
+- Optional per-action terminal titles (terminal-dependent)
+- Packaging (AUR / distro packages)

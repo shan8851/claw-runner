@@ -127,24 +127,77 @@ def _resolve_cli(cli: str) -> ResolvedCli:
     return ResolvedCli(path=primary, found=False, configured=configured)
 
 
-def _resolve_terminal(config_terminal: str) -> List[str]:
-    if config_terminal.strip():
-        return _split_cmd(config_terminal)
+def _resolve_terminal(config_terminal: str) -> str:
+    """Return the preferred terminal command string (may include args).
 
-    # Prefer desktop-integrated terminals first.
-    candidates: List[List[str]] = [
-        ["x-terminal-emulator", "-e"],
-        ["konsole", "-e"],
-        ["gnome-terminal", "--"],
-        ["alacritty", "-e"],
-        ["kitty", "-e"],
-        ["xterm", "-e"],
+    Precedence:
+    1) config.json: terminal
+    2) $TERMINAL
+    3) autodetect common terminals
+    """
+
+    if config_terminal.strip():
+        return config_terminal.strip()
+
+    env_terminal = (os.environ.get("TERMINAL") or "").strip()
+    if env_terminal:
+        return env_terminal
+
+    candidates = [
+        # Shan's preference + common Linux terminals
+        "kitty",
+        # KDE
+        "konsole",
+        # GNOME
+        "gnome-terminal",
+        # Popular cross-DE
+        "alacritty",
+        # Debian/Ubuntu alternative
+        "x-terminal-emulator",
+        # Lowest common denominator
+        "xterm",
     ]
 
-    for cmd in candidates:
-        if _which_or_none(cmd[0]):
-            return cmd
-    return []
+    for name in candidates:
+        if _which_or_none(name):
+            return name
+
+    return ""
+
+
+def _terminal_argv(terminal_cmd: str, shell_cmd: str) -> List[str]:
+    """Build argv to run a shell command inside a terminal and keep it open."""
+
+    if not terminal_cmd.strip():
+        return []
+
+    # Advanced: allow config like: "kitty --hold sh -lc {cmd}".
+    # {cmd} is substituted as a *single shell argument* (quoted as needed).
+    if "{cmd}" in terminal_cmd:
+        return _split_cmd(terminal_cmd.replace("{cmd}", shlex.quote(shell_cmd)))
+
+    term = _split_cmd(terminal_cmd)
+    if not term:
+        return []
+
+    exe = os.path.basename(term[0])
+
+    if exe == "kitty":
+        return term + ["--hold", "sh", "-lc", shell_cmd]
+
+    if exe == "konsole":
+        # --hold keeps Konsole open after the command exits.
+        return term + ["--hold", "-e", "sh", "-lc", shell_cmd]
+
+    if exe == "gnome-terminal":
+        # gnome-terminal uses "--" separator.
+        return term + ["--", "bash", "-lc", shell_cmd]
+
+    if exe == "xterm":
+        return term + ["-hold", "-e", "sh", "-lc", shell_cmd]
+
+    # Generic terminals typically accept -e.
+    return term + ["-e", "sh", "-lc", shell_cmd]
 
 
 def _run(
@@ -226,7 +279,6 @@ class KRunnerInterface(ServiceInterface):
 
         wants_status = query_l in ("claw", "claw ") or "status" in query_l or "health" in query_l
         wants_gateway = "gateway" in query_l
-        wants_daemon = "daemon" in query_l or "browser" in query_l
         wants_logs = "log" in query_l or "journal" in query_l
         wants_config = "config" in query_l
         wants_memory = "memory" in query_l or "mem" in query_l
@@ -275,31 +327,7 @@ class KRunnerInterface(ServiceInterface):
                 [],
             )
 
-        if wants_daemon or (query_l in ("claw", "claw ")):
-            add_match(
-                "daemon-start",
-                "Daemon: start",
-                "preferences-system",
-                0.855,
-                f"systemctl --user start {self.config.daemon_service}",
-                [],
-            )
-            add_match(
-                "daemon-stop",
-                "Daemon: stop",
-                "preferences-system",
-                0.854,
-                f"systemctl --user stop {self.config.daemon_service}",
-                [],
-            )
-            add_match(
-                "daemon-restart",
-                "Daemon: restart",
-                "preferences-system",
-                0.853,
-                f"systemctl --user restart {self.config.daemon_service}",
-                [],
-            )
+        # Daemon actions intentionally removed (v0): keep KRunner surface area focused on the gateway.
 
         if wants_logs or (query_l in ("claw", "claw ")):
             add_match(
@@ -310,14 +338,7 @@ class KRunnerInterface(ServiceInterface):
                 f"journalctl --user -u {self.config.gateway_service} -f",
                 ["terminal"],
             )
-            add_match(
-                "logs-daemon",
-                "Follow daemon logs",
-                "text-x-log",
-                0.79,
-                f"journalctl --user -u {self.config.daemon_service} -f",
-                ["terminal"],
-            )
+            # (daemon log action removed in v0)
             add_match(
                 "logs-runner",
                 "Follow claw-runner logs",
@@ -404,7 +425,6 @@ class KRunnerInterface(ServiceInterface):
                         "dashboardUrl": self.config.dashboard_url,
                         "cli": self.config.cli,
                         "gatewayService": self.config.gateway_service,
-                        "daemonService": self.config.daemon_service,
                         "terminal": self.config.terminal,
                     },
                     indent=2,
@@ -415,17 +435,22 @@ class KRunnerInterface(ServiceInterface):
         return cfg_path
 
     def _open_terminal(self, command: Sequence[str], title: str = "") -> None:
-        term = _resolve_terminal(self.config.terminal)
-        if not term:
+        terminal_cmd = _resolve_terminal(self.config.terminal)
+        if not terminal_cmd:
             self._notify("No terminal emulator found")
             return
 
-        # Some terminals accept a title flag, but it is inconsistent; keep simple.
+        # Keep the terminal open after the command finishes.
+        cmd_str = shlex.join(list(command))
+        shell_cmd = f"{cmd_str}; echo; exec \"${{SHELL:-bash}}\" -l"
+
+        argv = _terminal_argv(terminal_cmd, shell_cmd)
+        if not argv:
+            self._notify("No terminal emulator found")
+            return
+
         try:
-            subprocess.Popen(
-                list(term) + list(command),
-                start_new_session=True,
-            )
+            subprocess.Popen(list(argv), start_new_session=True)
         except Exception as e:
             log.exception("Failed to open terminal")
             self._notify(f"Failed to open terminal: {e}")
@@ -498,18 +523,51 @@ class KRunnerInterface(ServiceInterface):
                 or (isinstance(gateway_state, str) and gateway_state.lower() in ("ok", "up", "reachable", "running"))
             )
 
+            # Channel status formats have changed a few times. Prefer structured fields
+            # if present; otherwise parse "channelSummary" strings.
+
+            def normalize_chan_state(raw: object) -> str:
+                s = str(raw or "").strip()
+                if not s:
+                    return "?"
+                word = s.split()[0].lower()
+                if word in ("ok", "up", "reachable", "running", "connected", "configured", "linked"):
+                    return "OK"
+                if word in ("down", "error", "missing", "unlinked", "disconnected"):
+                    return "DOWN"
+                return word.upper()
+
+            tg: str = "?"
+            wa: str = "?"
+
             channels = data.get("channels") or data.get("channelStatus") or []
-
-            def chan(name: str) -> str:
+            if isinstance(channels, list):
                 for c in channels:
+                    if not isinstance(c, dict):
+                        continue
                     c_name = (c.get("channel") or c.get("name") or "").lower()
-                    if c_name == name:
-                        state = (c.get("state") or c.get("status") or "").upper()
-                        return state or "?"
-                return "?"
+                    state = normalize_chan_state(c.get("state") or c.get("status"))
+                    if c_name == "telegram":
+                        tg = state
+                    if c_name == "whatsapp":
+                        wa = state
 
-            tg = chan("telegram")
-            wa = chan("whatsapp")
+            # Most current clawdbot builds expose channel state via channelSummary.
+            summary = data.get("channelSummary")
+            if isinstance(summary, list):
+                for line in summary:
+                    if not isinstance(line, str):
+                        continue
+                    if line.startswith("Telegram:"):
+                        tg = normalize_chan_state(line.split(":", 1)[1])
+                    if line.startswith("WhatsApp:"):
+                        wa = normalize_chan_state(line.split(":", 1)[1])
+
+            # WhatsApp can also appear as the "linkChannel".
+            link_channel = data.get("linkChannel")
+            if isinstance(link_channel, dict) and (link_channel.get("id") == "whatsapp"):
+                if link_channel.get("linked") is True:
+                    wa = "OK"
 
             session_count = None
             sessions = data.get("sessions")
@@ -590,25 +648,21 @@ class KRunnerInterface(ServiceInterface):
             if matchId == "logs-gateway":
                 self._open_terminal(["journalctl", "--user", "-u", self.config.gateway_service, "-f"])
                 return
-            if matchId == "logs-daemon":
-                self._open_terminal(["journalctl", "--user", "-u", self.config.daemon_service, "-f"])
-                return
+            # (daemon log action removed in v0)
             if matchId == "logs-runner":
                 self._open_terminal(["journalctl", "--user", "-u", "claw-runner.service", "-f"])
                 return
 
-            if matchId.startswith("gateway-") or matchId.startswith("daemon-"):
-                kind, _, verb = matchId.partition("-")
+            if matchId.startswith("gateway-"):
+                _, _, verb = matchId.partition("-")
                 verb = (verb or "restart").strip() or "restart"
                 if verb not in ("start", "stop", "restart"):
                     verb = "restart"
 
-                unit = self.config.gateway_service if kind == "gateway" else self.config.daemon_service
+                unit = self.config.gateway_service
                 ok, msg = self._systemctl_user(verb, unit)
-                # Make the popup explicit about what the user just did.
-                prefix = "Gateway" if kind == "gateway" else "Daemon"
-                self._notify(f"{prefix}: {msg}", seconds=3 if ok else 6)
-                log.info("systemctl action kind=%s verb=%s unit=%s ok=%s", kind, verb, unit, ok)
+                self._notify(f"Gateway: {msg}", seconds=3 if ok else 6)
+                log.info("systemctl action kind=gateway verb=%s unit=%s ok=%s", verb, unit, ok)
                 return
 
         except Exception as e:
