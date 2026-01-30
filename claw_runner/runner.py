@@ -47,35 +47,84 @@ def _which_or_none(name: str) -> Optional[str]:
         return None
 
 
-def _resolve_cli(cli: str) -> str:
-    # Allow absolute/relative paths in config; otherwise resolve via PATH.
-    if not cli:
-        return "clawdbot"
+@dataclass(frozen=True)
+class ResolvedCli:
+    path: str
+    found: bool
+    # What the user configured (or default), for nicer errors
+    configured: str
 
-    if os.path.isabs(cli) and os.access(cli, os.X_OK):
-        return cli
 
-    # If config provided a relative path, resolve relative to HOME.
-    if ("/" in cli) and not os.path.isabs(cli):
-        p = Path(os.path.expanduser(cli)).resolve()
-        if p.exists() and os.access(str(p), os.X_OK):
-            return str(p)
+def _parse_semver_from_nvm_dirname(name: str) -> Tuple[int, int, int]:
+    # nvm uses names like v22.14.0
+    m = re.match(r"^v(\d+)\.(\d+)\.(\d+)$", name)
+    if not m:
+        return (0, 0, 0)
+    return (int(m.group(1)), int(m.group(2)), int(m.group(3)))
 
-    found = _which_or_none(cli)
-    if found:
-        return found
 
-    # common locations under user installs
-    for p in (
-        Path(os.path.expanduser("~/.local/bin")) / cli,
-        Path("/usr/local/bin") / cli,
-        Path("/usr/bin") / cli,
-    ):
-        if p.exists() and os.access(str(p), os.X_OK):
-            return str(p)
+def _resolve_cli(cli: str) -> ResolvedCli:
+    """Resolve the configured CLI binary robustly.
 
-    # Last resort: keep as-is so error output can mention it.
-    return cli
+    - If config CLI is an absolute path: use it as-is.
+    - Else try PATH.
+    - Else try common install locations, including nvm.
+
+    Returns ResolvedCli(found=False) when we could not find an executable.
+    """
+
+    configured = (cli or "").strip() or "clawdbot"
+
+    # Absolute path: trust it (even if missing), so errors mention the exact path.
+    expanded = os.path.expanduser(configured)
+    if os.path.isabs(expanded):
+        return ResolvedCli(path=expanded, found=os.access(expanded, os.X_OK), configured=configured)
+
+    # Relative path containing a slash: resolve relative to HOME.
+    if ("/" in expanded) and not os.path.isabs(expanded):
+        p = Path(expanded).expanduser().resolve()
+        return ResolvedCli(path=str(p), found=os.access(str(p), os.X_OK), configured=configured)
+
+    # Otherwise treat as a binary name.
+    primary = expanded
+    names = [primary] + [n for n in ("clawdbot", "moltbot", "openclaw") if n != primary]
+
+    # 1) PATH lookup
+    for name in names:
+        found = _which_or_none(name)
+        if found:
+            return ResolvedCli(path=found, found=True, configured=configured)
+
+    # 2) nvm installs: ~/.nvm/versions/node/*/bin/<name> (prefer newest)
+    nvm_root = Path(os.path.expanduser("~/.nvm/versions/node"))
+    nvm_hits: List[Tuple[Tuple[int, int, int], str]] = []
+    if nvm_root.exists():
+        for ver_dir in nvm_root.iterdir():
+            if not ver_dir.is_dir():
+                continue
+            ver = _parse_semver_from_nvm_dirname(ver_dir.name)
+            for name in names:
+                p = ver_dir / "bin" / name
+                if p.exists() and os.access(str(p), os.X_OK):
+                    nvm_hits.append((ver, str(p)))
+    if nvm_hits:
+        nvm_hits.sort(key=lambda t: t[0], reverse=True)
+        return ResolvedCli(path=nvm_hits[0][1], found=True, configured=configured)
+
+    # 3) common locations
+    common_dirs = [
+        Path(os.path.expanduser("~/.local/bin")),
+        Path("/usr/local/bin"),
+        Path("/usr/bin"),
+    ]
+    for d in common_dirs:
+        for name in names:
+            p = d / name
+            if p.exists() and os.access(str(p), os.X_OK):
+                return ResolvedCli(path=str(p), found=True, configured=configured)
+
+    # Not found
+    return ResolvedCli(path=primary, found=False, configured=configured)
 
 
 def _resolve_terminal(config_terminal: str) -> List[str]:
@@ -202,22 +251,54 @@ class KRunnerInterface(ServiceInterface):
 
         if wants_gateway or (query_l in ("claw", "claw ")):
             add_match(
-                "gateway",
-                "Gateway service",
+                "gateway-start",
+                "Gateway: start",
                 "network-server",
-                0.86,
-                f"systemctl --user (unit: {self.config.gateway_service})",
-                ["start", "stop", "restart"],
+                0.865,
+                f"systemctl --user start {self.config.gateway_service}",
+                [],
+            )
+            add_match(
+                "gateway-stop",
+                "Gateway: stop",
+                "network-server",
+                0.864,
+                f"systemctl --user stop {self.config.gateway_service}",
+                [],
+            )
+            add_match(
+                "gateway-restart",
+                "Gateway: restart",
+                "network-server",
+                0.863,
+                f"systemctl --user restart {self.config.gateway_service}",
+                [],
             )
 
         if wants_daemon or (query_l in ("claw", "claw ")):
             add_match(
-                "daemon",
-                "Daemon service",
+                "daemon-start",
+                "Daemon: start",
                 "preferences-system",
-                0.85,
-                f"systemctl --user (unit: {self.config.daemon_service})",
-                ["start", "stop", "restart"],
+                0.855,
+                f"systemctl --user start {self.config.daemon_service}",
+                [],
+            )
+            add_match(
+                "daemon-stop",
+                "Daemon: stop",
+                "preferences-system",
+                0.854,
+                f"systemctl --user stop {self.config.daemon_service}",
+                [],
+            )
+            add_match(
+                "daemon-restart",
+                "Daemon: restart",
+                "preferences-system",
+                0.853,
+                f"systemctl --user restart {self.config.daemon_service}",
+                [],
             )
 
         if wants_logs or (query_l in ("claw", "claw ")):
@@ -249,7 +330,7 @@ class KRunnerInterface(ServiceInterface):
         if wants_config or (query_l in ("claw", "claw ")):
             add_match(
                 "open-config",
-                "Open claw-runner config",
+                "Open config",
                 "document-edit",
                 0.76,
                 "~/.config/claw-runner/config.json",
@@ -389,14 +470,17 @@ class KRunnerInterface(ServiceInterface):
         return res
 
     def _status_summary(self) -> str:
-        cli = _resolve_cli(self.config.cli)
+        cli_info = _resolve_cli(self.config.cli)
+        if not cli_info.found:
+            return "CLI not found (clawdbot). Set 'cli' in ~/.config/claw-runner/config.json"
+        cli = cli_info.path
 
         # Prefer JSON if supported.
         for args in (
             [cli, "status", "--json"],
             [cli, "status", "--format", "json"],
         ):
-            rc, out, err = _run(args, timeout_s=2.0)
+            rc, out, err = _run(args, timeout_s=4.0)
             if rc != 0 or not out.strip():
                 continue
             try:
@@ -436,13 +520,17 @@ class KRunnerInterface(ServiceInterface):
             if session_count is None:
                 session_count = data.get("sessionCount")
 
-            parts = ["Gateway: OK" if gateway_ok else "Gateway: DOWN", f"TG: {tg}", f"WA: {wa}"]
+            parts = [
+                "Gateway OK" if gateway_ok else "Gateway DOWN",
+                f"TG {tg}",
+                f"WA {wa}",
+            ]
             if isinstance(session_count, int):
-                parts.append(f"Sessions: {session_count}")
+                parts.append(f"Sessions {session_count}")
             return " · ".join(parts)
 
         # Fallback to plain text.
-        rc, out, err = _run([cli, "status"], timeout_s=2.0)
+        rc, out, err = _run([cli, "status"], timeout_s=4.0)
         if rc != 0:
             msg = (err.strip() or out.strip() or "unavailable").strip()
             return f"Status: {msg}"
@@ -453,9 +541,13 @@ class KRunnerInterface(ServiceInterface):
         tg = str(parsed.get("telegram") or "?").strip().upper()
         wa = str(parsed.get("whatsapp") or "?").strip().upper()
 
-        parts = ["Gateway: OK" if gateway_ok else "Gateway: DOWN", f"TG: {tg}", f"WA: {wa}"]
+        parts = [
+            "Gateway OK" if gateway_ok else "Gateway DOWN",
+            f"TG {tg}",
+            f"WA {wa}",
+        ]
         if isinstance(parsed.get("sessions"), int):
-            parts.append(f"Sessions: {parsed['sessions']}")
+            parts.append(f"Sessions {parsed['sessions']}")
         return " · ".join(parts)
 
     @method()
@@ -476,6 +568,7 @@ class KRunnerInterface(ServiceInterface):
             if matchId == "open-config":
                 p = self._ensure_default_config_file()
                 self._open_file(str(p))
+                self._notify(f"Config: {p}")
                 return
 
             if matchId == "status-concise":
@@ -483,7 +576,11 @@ class KRunnerInterface(ServiceInterface):
                 return
 
             if matchId in ("status-verbose", "memory"):
-                cli = _resolve_cli(self.config.cli)
+                cli_info = _resolve_cli(self.config.cli)
+                if not cli_info.found:
+                    self._notify("CLI not found (clawdbot). Set 'cli' in ~/.config/claw-runner/config.json", seconds=6)
+                    return
+                cli = cli_info.path
                 # Prefer --all if supported; otherwise plain status.
                 rc, out, _ = _run([cli, "status", "--all"], timeout_s=1.5)
                 cmd = [cli, "status", "--all"] if rc == 0 else [cli, "status"]
@@ -500,13 +597,18 @@ class KRunnerInterface(ServiceInterface):
                 self._open_terminal(["journalctl", "--user", "-u", "claw-runner.service", "-f"])
                 return
 
-            if matchId in ("gateway", "daemon"):
-                unit = self.config.gateway_service if matchId == "gateway" else self.config.daemon_service
-                verb = (actionId or "restart").strip() or "restart"
+            if matchId.startswith("gateway-") or matchId.startswith("daemon-"):
+                kind, _, verb = matchId.partition("-")
+                verb = (verb or "restart").strip() or "restart"
                 if verb not in ("start", "stop", "restart"):
                     verb = "restart"
+
+                unit = self.config.gateway_service if kind == "gateway" else self.config.daemon_service
                 ok, msg = self._systemctl_user(verb, unit)
-                self._notify(msg, seconds=3 if ok else 6)
+                # Make the popup explicit about what the user just did.
+                prefix = "Gateway" if kind == "gateway" else "Daemon"
+                self._notify(f"{prefix}: {msg}", seconds=3 if ok else 6)
+                log.info("systemctl action kind=%s verb=%s unit=%s ok=%s", kind, verb, unit, ok)
                 return
 
         except Exception as e:
