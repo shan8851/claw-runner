@@ -8,5 +8,6 @@ if [ ! -d "$DIR/.venv" ]; then
   "$DIR/.venv/bin/pip" install -r "$DIR/requirements.txt"
 fi
 
-# Run the script by file path so it works even when the working directory is not the repo root (e.g. systemd).
-exec "$DIR/.venv/bin/python" "$DIR/claw_runner/runner.py"
+# Ensure the repo root is on PYTHONPATH so `python -m claw_runner.runner` works under systemd.
+export PYTHONPATH="$DIR"
+exec "$DIR/.venv/bin/python" -m claw_runner.runner

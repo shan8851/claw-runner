@@ -7,7 +7,7 @@ from typing import List
 from dbus_next.aio import MessageBus
 from dbus_next.service import ServiceInterface, method
 
-from .config import load_config
+from claw_runner.config import load_config
 
 
 # KRunner DBus interface docs:
