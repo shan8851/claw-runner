@@ -32,45 +32,55 @@ class KRunnerInterface(ServiceInterface):
         self.config = load_config()
 
     @method()
-    def Actions(self) -> "as":
-        # V1: only one action. KRunner calls this to show action buttons.
-        return ["open"]
+    def Actions(self) -> "a(sss)":
+        # Return a list of supported actions.
+        # Structure: (id, text, iconName)
+        return [("open", "Open", "applications-internet")]
 
     @method()
-    def Match(self, query: "s") -> "a(sssdss)":
+    def Match(self, query: "s") -> "a(sssida{sv})":
         q = (query or "").strip()
         if not q:
             return []
 
-        # Trigger keyword: claw
         if not q.lower().startswith("claw"):
             return []
 
         url = self.config.dashboard_url
+
+        # KRunner::QueryMatch::Type values (common):
+        # ExactMatch=100, PossibleMatch=30, etc.
+        EXACT_MATCH = 100
+
+        props = {
+            "subtext": url,
+            "urls": [url],
+            # Show our single action.
+            "actions": ["open"],
+        }
+
         return [
             (
                 "open-dashboard",  # id
                 "Open Clawdbot dashboard",  # text
-                url,  # subtext
-                1.0,  # relevance
-                "applications-internet",  # icon name
-                "open",  # action id
+                "applications-internet",  # iconName
+                EXACT_MATCH,  # type (int)
+                1.0,  # relevance (double)
+                props,  # properties (a{sv})
             )
         ]
 
     @method()
-    def Run(self, match_id: "s", action_id: "s") -> "b":
-        # Called when user hits Enter or triggers an action.
-        if match_id != "open-dashboard":
-            return False
+    def Run(self, matchId: "s", actionId: "s") -> None:
+        # actionId is empty when user hits Enter; otherwise one of Actions().
+        if matchId != "open-dashboard":
+            return
 
         url = self.config.dashboard_url
         try:
-            # Use xdg-open so it works across DEs.
             subprocess.Popen(["xdg-open", url])
-            return True
         except Exception:
-            return False
+            return
 
 
 async def main():
