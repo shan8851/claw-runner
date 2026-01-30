@@ -35,7 +35,7 @@ class KRunnerInterface(ServiceInterface):
     def Actions(self) -> "a(sss)":
         # Return a list of supported actions.
         # Structure: (id, text, iconName)
-        return [("open", "Open", "applications-internet")]
+        return [["open", "Open", "applications-internet"]]
 
     @method()
     def Match(self, query: "s") -> "a(sssida{sv})":
@@ -60,14 +60,14 @@ class KRunnerInterface(ServiceInterface):
         }
 
         return [
-            (
+            [
                 "open-dashboard",  # id
                 "Open Clawdbot dashboard",  # text
                 "applications-internet",  # iconName
                 EXACT_MATCH,  # type (int)
                 1.0,  # relevance (double)
                 props,  # properties (a{sv})
-            )
+            ]
         ]
 
     @method()
