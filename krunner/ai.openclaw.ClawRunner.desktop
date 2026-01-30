@@ -4,16 +4,19 @@ Comment=KRunner actions for Clawdbot
 Type=Service
 Icon=applications-internet
 X-KDE-ServiceTypes=Plasma/Runner
-X-KDE-PluginInfo-Name=ai.openclaw.ClawRunner
+
+X-KDE-PluginInfo-Name=clawrunner
 X-KDE-PluginInfo-Author=shan8851
-X-KDE-PluginInfo-Email=
 X-KDE-PluginInfo-Version=0.1.0
 X-KDE-PluginInfo-License=MIT
 X-KDE-PluginInfo-EnabledByDefault=true
 
-# DBus runner wiring
-X-KDE-Runner-DBusService=ai.openclaw.ClawRunner
-X-KDE-Runner-DBusPath=/runner
+# DBus Runner wiring (Plasma/KRunner)
+X-Plasma-API=DBus
+X-Plasma-DBusRunner-Service=ai.openclaw.ClawRunner
+X-Plasma-DBusRunner-Path=/runner
+X-Plasma-Request-Actions-Once=true
 
 # Trigger (shown in KRunner help)
-X-KDE-Runner-Syntaxes=claw : Clawdbot actions
+X-Plasma-Runner-Syntaxes=claw :q:
+X-Plasma-Runner-Syntax-Descriptions=Clawdbot actions (e.g. "claw" or "claw dashboard")
