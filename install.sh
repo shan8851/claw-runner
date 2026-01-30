@@ -17,6 +17,12 @@ install -m 0644 "$ROOT/krunner/ai.openclaw.ClawRunner.desktop" "$HOME/.local/sha
 
 echo "Installed: ~/.local/share/krunner/dbusplugins/ai.openclaw.ClawRunner.desktop"
 
+# 3) DBus service activation file (so KRunner can activate the runner)
+mkdir -p "$HOME/.local/share/dbus-1/services"
+install -m 0644 "$ROOT/dbus/ai.openclaw.ClawRunner.service" "$HOME/.local/share/dbus-1/services/ai.openclaw.ClawRunner.service"
+
+echo "Installed: ~/.local/share/dbus-1/services/ai.openclaw.ClawRunner.service"
+
 echo
 
 echo "Next:"
