@@ -140,7 +140,7 @@ class KRunnerInterface(ServiceInterface):
             session_count = data.get("sessionCount")
 
         parts = []
-        parts.append("Gateway: OK" if gateway_ok else "Gateway: ?")
+        parts.append("Gateway: OK" if gateway_ok else "Gateway: DOWN")
         parts.append(f"TG: {tg}")
         parts.append(f"WA: {wa}")
         if isinstance(session_count, int):
