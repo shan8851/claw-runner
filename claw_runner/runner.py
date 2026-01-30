@@ -1,9 +1,10 @@
 import asyncio
 import json
+import os
 import shutil
 import subprocess
 from dataclasses import dataclass
-from typing import List
+from typing import List, Optional
 
 from dbus_next import Variant
 from dbus_next.aio import MessageBus
@@ -32,6 +33,7 @@ class KRunnerInterface(ServiceInterface):
     def __init__(self):
         super().__init__("org.kde.krunner1")
         self.config = load_config()
+        self._activation_token: Optional[str] = None
 
     @method()
     def Actions(self) -> "a(sss)":
@@ -147,14 +149,37 @@ class KRunnerInterface(ServiceInterface):
 
         return " · ".join(parts)
 
+    @method()
+    def SetActivationToken(self, token: "s") -> None:
+        # Plasma passes an XDG activation token for proper focus-stealing prevention.
+        self._activation_token = (token or "").strip() or None
+
+    def _open_url(self, url: str) -> None:
+        env = os.environ.copy()
+        if self._activation_token:
+            env["XDG_ACTIVATION_TOKEN"] = self._activation_token
+
+        candidates = [
+            ["xdg-open", url],
+            ["kde-open6", url],
+            ["kde-open5", url],
+            ["gio", "open", url],
+        ]
+
+        for cmd in candidates:
+            exe = cmd[0]
+            if shutil.which(exe):
+                try:
+                    subprocess.Popen(cmd, env=env, start_new_session=True)
+                    return
+                except Exception:
+                    continue
+
+    @method()
     def Run(self, matchId: "s", actionId: "s") -> None:
         # actionId is empty when user hits Enter; otherwise one of Actions().
         if matchId == "open-dashboard":
-            url = self.config.dashboard_url
-            try:
-                subprocess.Popen(["xdg-open", url])
-            except Exception:
-                pass
+            self._open_url(self.config.dashboard_url)
             return
 
         if matchId == "status":
