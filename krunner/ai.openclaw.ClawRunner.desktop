@@ -1,6 +1,6 @@
 [Desktop Entry]
 Name=claw-runner
-Comment=KRunner actions for Clawdbot
+Comment=KRunner actions for OpenClaw / Clawdbot
 Type=Service
 Icon=applications-internet
 X-KDE-ServiceTypes=Plasma/Runner
@@ -19,4 +19,4 @@ X-Plasma-Request-Actions-Once=true
 
 # Trigger (shown in KRunner help)
 X-Plasma-Runner-Syntaxes=claw :q:
-X-Plasma-Runner-Syntax-Descriptions=Clawdbot actions (e.g. "claw" or "claw dashboard")
+X-Plasma-Runner-Syntax-Descriptions=OpenClaw actions (e.g. "claw" or "claw dashboard")

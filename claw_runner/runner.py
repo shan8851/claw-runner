@@ -64,7 +64,7 @@ class KRunnerInterface(ServiceInterface):
         return [
             [
                 "open-dashboard",  # id
-                "Open Clawdbot dashboard",  # text
+                "Open OpenClaw dashboard",  # text
                 "applications-internet",  # iconName
                 EXACT_MATCH,  # type (int)
                 1.0,  # relevance (double)
