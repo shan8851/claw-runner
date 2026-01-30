@@ -4,10 +4,17 @@ A tiny **KRunner** integration for **OpenClaw**.
 
 Type `claw` in KRunner to get quick actions (V1: open the dashboard).
 
-## Status
+## Status & actions
 
-- ✅ V1: `claw` → “Open the OpenClaw dashboard”
-- 🛠️ Next: status/restart/logs actions + config
+Type `claw` in KRunner to get:
+
+- Open dashboard
+- Status (concise notification)
+- Status (verbose in terminal)
+- Gateway/Daemon: start/stop/restart (via `systemctl --user`)
+- Logs: follow `journalctl -f` for gateway/daemon/runner
+- Open config
+- Memory status (currently opens verbose status)
 
 ## How it works
 
@@ -65,6 +72,15 @@ You can override it in:
 
 ```json
 {
-  "dashboardUrl": "http://127.0.0.1:18789/"
+  "dashboardUrl": "http://127.0.0.1:18789/",
+  "cli": "clawdbot",
+  "gatewayService": "clawdbot-gateway.service",
+  "daemonService": "clawdbot-browser.service",
+  "terminal": "x-terminal-emulator -e"
 }
 ```
+
+Notes:
+- `cli` can be a bare name (resolved via PATH) or an absolute path.
+- If `terminal` is empty, claw-runner auto-detects (x-terminal-emulator/konsole/gnome-terminal/alacritty/kitty/xterm).
+
