@@ -93,7 +93,6 @@ class KRunnerInterface(ServiceInterface):
 
         return matches
 
-    @method()
     def _notify(self, message: str) -> None:
         # Best-effort: kdialog → notify-send → stderr (ignored)
         try:
