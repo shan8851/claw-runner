@@ -1,8 +1,27 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+ROOT="$(cd "$(dirname "$0")" && pwd)"
+
+# 1) systemd user service
 mkdir -p "$HOME/.config/systemd/user"
-install -m 0644 "$(dirname "$0")/claw-runner.service" "$HOME/.config/systemd/user/claw-runner.service"
+install -m 0644 "$ROOT/claw-runner.service" "$HOME/.config/systemd/user/claw-runner.service"
 
 echo "Installed: ~/.config/systemd/user/claw-runner.service"
-echo "Next: systemctl --user daemon-reload && systemctl --user enable --now claw-runner.service"
+
+# 2) KRunner desktop entry (DBus runner registration)
+# Plasma typically looks here for DBus runners:
+#   ~/.local/share/krunner/dbusplugins/
+mkdir -p "$HOME/.local/share/krunner/dbusplugins"
+install -m 0644 "$ROOT/krunner/ai.openclaw.ClawRunner.desktop" "$HOME/.local/share/krunner/dbusplugins/ai.openclaw.ClawRunner.desktop"
+
+echo "Installed: ~/.local/share/krunner/dbusplugins/ai.openclaw.ClawRunner.desktop"
+
+echo
+
+echo "Next:"
+echo "  systemctl --user daemon-reload"
+echo "  systemctl --user enable --now claw-runner.service"
+echo "  # restart krunner (Plasma 6/5):"
+echo "  kquitapp6 krunner || kquitapp5 krunner || true"
+echo "  krunner &"
