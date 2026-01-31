@@ -10,6 +10,7 @@ import webbrowser
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Dict, List, Optional, Sequence, Tuple
+from urllib.parse import urlparse
 
 from dbus_next import Variant
 from dbus_next.aio import MessageBus
@@ -24,15 +25,6 @@ from claw_runner.config import load_config
 # Path: /runner
 
 log = logging.getLogger("claw-runner")
-
-
-@dataclass
-class Match:
-    id: str
-    text: str
-    subtext: str
-    relevance: float
-    icon: str
 
 
 def _split_cmd(cmd: str) -> List[str]:
@@ -383,6 +375,22 @@ class KRunnerInterface(ServiceInterface):
             return
 
     def _open_url(self, url: str) -> None:
+        """Open a URL using a desktop handler.
+
+        Security note: we avoid passing option-like values (e.g. "-foo") to openers.
+        The runner only opens URLs originating from its own config/UI.
+        """
+
+        url = (url or "").strip()
+        if not url or url.startswith("-"):
+            return
+
+        # Be conservative: only allow common safe schemes.
+        scheme = urlparse(url).scheme.lower()
+        if scheme and scheme not in {"http", "https", "file"}:
+            self._notify(f"Blocked URL scheme: {scheme}")
+            return
+
         env = os.environ.copy()
         if self._activation_token:
             env["XDG_ACTIVATION_TOKEN"] = self._activation_token
@@ -410,8 +418,11 @@ class KRunnerInterface(ServiceInterface):
             pass
 
     def _open_file(self, path: str) -> None:
-        p = os.path.expanduser(path)
-        self._open_url(f"file://{p}")
+        try:
+            uri = Path(os.path.expanduser(path)).resolve().as_uri()
+        except Exception:
+            return
+        self._open_url(uri)
 
     def _ensure_default_config_file(self) -> Path:
         cfg_path = Path(os.path.expanduser("~/.config/claw-runner/config.json"))
@@ -495,7 +506,7 @@ class KRunnerInterface(ServiceInterface):
     def _status_summary(self) -> str:
         cli_info = _resolve_cli(self.config.cli)
         if not cli_info.found:
-            return "CLI not found (clawdbot). Set 'cli' in ~/.config/claw-runner/config.json"
+            return f"CLI not found ({cli_info.configured}). Set 'cli' in ~/.config/claw-runner/config.json"
         cli = cli_info.path
 
         # Prefer JSON if supported.
@@ -648,7 +659,10 @@ class KRunnerInterface(ServiceInterface):
             if matchId in ("status-verbose", "memory"):
                 cli_info = _resolve_cli(self.config.cli)
                 if not cli_info.found:
-                    self._notify("CLI not found (clawdbot). Set 'cli' in ~/.config/claw-runner/config.json", seconds=6)
+                    self._notify(
+                        f"CLI not found ({cli_info.configured}). Set 'cli' in ~/.config/claw-runner/config.json",
+                        seconds=6,
+                    )
                     return
                 cli = cli_info.path
                 # Prefer --all if supported; otherwise plain status.
