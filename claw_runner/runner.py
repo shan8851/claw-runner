@@ -144,16 +144,14 @@ def _resolve_terminal(config_terminal: str) -> str:
         return env_terminal
 
     candidates = [
-        # Shan's preference + common Linux terminals
-        "kitty",
-        # KDE
-        "konsole",
-        # GNOME
-        "gnome-terminal",
-        # Popular cross-DE
-        "alacritty",
-        # Debian/Ubuntu alternative
+        # Debian/Ubuntu alternative: respects update-alternatives / system default
         "x-terminal-emulator",
+        # Popular standalone terminals
+        "kitty",
+        "alacritty",
+        # DE-specific fallbacks
+        "konsole",
+        "gnome-terminal",
         # Lowest common denominator
         "xterm",
     ]
@@ -505,7 +503,9 @@ class KRunnerInterface(ServiceInterface):
             [cli, "status", "--json"],
             [cli, "status", "--format", "json"],
         ):
-            rc, out, err = _run(args, timeout_s=4.0)
+            # Be generous here: on some machines the CLI can take a moment
+            # (initialisation, disk wake, etc.). If this times out, we fall back.
+            rc, out, err = _run(args, timeout_s=8.0)
             if rc != 0 or not out.strip():
                 continue
             try:
@@ -598,6 +598,18 @@ class KRunnerInterface(ServiceInterface):
         gateway_ok = gateway_raw.lower() in ("ok", "up", "running", "reachable", "true")
         tg = str(parsed.get("telegram") or "?").strip().upper()
         wa = str(parsed.get("whatsapp") or "?").strip().upper()
+
+        # Newer clawdbot plain-text output uses tables. Try to extract channel
+        # state from those tables if our simple "Label: value" parsing failed.
+        if tg == "?" or wa == "?":
+            def table_state(label: str) -> Optional[str]:
+                m = re.search(rf"(?m)^│\s*{re.escape(label)}\s*│.*?│\s*([A-Z]+)\s*│", out)
+                if not m:
+                    return None
+                return m.group(1).strip().upper()
+
+            tg = table_state("Telegram") or tg
+            wa = table_state("WhatsApp") or wa
 
         parts = [
             "Gateway OK" if gateway_ok else "Gateway DOWN",
