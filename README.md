@@ -57,8 +57,8 @@ Example:
 ```json
 {
   "dashboardUrl": "http://127.0.0.1:18789/",
-  "cli": "clawdbot",
-  "gatewayService": "clawdbot-gateway.service",
+  "cli": "openclaw",
+  "gatewayService": "openclaw-gateway.service",
   "terminal": "kitty"
 }
 ```

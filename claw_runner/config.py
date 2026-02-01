@@ -11,11 +11,11 @@ class Config:
 
     dashboard_url: str = "http://127.0.0.1:18789/"
 
-    # CLI binary name/path (clawdbot | openclaw, etc.)
-    cli: str = "clawdbot"
+    # CLI binary name/path (openclaw | clawdbot, etc.)
+    cli: str = "openclaw"
 
     # systemd --user service names
-    gateway_service: str = "clawdbot-gateway.service"
+    gateway_service: str = "openclaw-gateway.service"
 
     # Terminal command used for “verbose” actions and logs.
     # If empty, we’ll auto-detect one.
